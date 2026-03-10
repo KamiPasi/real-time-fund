@@ -185,6 +185,8 @@ export default function HomePage() {
 
   // 视图模式
   const [viewMode, setViewMode] = useState('card'); // card, list
+  // 全局隐藏金额状态（影响分组汇总、列表和卡片）
+  const [maskAmounts, setMaskAmounts] = useState(false);
 
   // 用户认证状态
   const [user, setUser] = useState(null);
@@ -3925,6 +3927,8 @@ export default function HomePage() {
                   groupName={getGroupName()}
                   getProfit={getHoldingProfit}
                   stickyTop={navbarHeight + filterBarHeight + (isMobile ? -14 : 0)}
+                  masked={maskAmounts}
+                  onToggleMasked={() => setMaskAmounts((v) => !v)}
                 />
 
               {currentTab !== 'all' && currentTab !== 'fav' && (
@@ -4019,6 +4023,7 @@ export default function HomePage() {
                                 onCustomSettingsChange={triggerCustomSettingsSync}
                                 closeDialogRef={fundDetailDialogCloseRef}
                                 blockDialogClose={!!fundDeleteConfirm}
+                                masked={maskAmounts}
                                 getFundCardProps={(row) => {
                                   const fund = row?.rawFund || (row ? { code: row.code, name: row.fundName } : null);
                                   if (!fund) return {};
@@ -4047,6 +4052,7 @@ export default function HomePage() {
                                       setPercentModes((prev) => ({ ...prev, [code]: !prev[code] })),
                                     onToggleCollapse: toggleCollapse,
                                     onToggleTrendCollapse: toggleTrendCollapse,
+                                    masked: maskAmounts,
                                     layoutMode: 'drawer',
                                   };
                                 }}
@@ -4122,9 +4128,11 @@ export default function HomePage() {
                               setPercentModes((prev) => ({ ...prev, [code]: !prev[code] })),
                             onToggleCollapse: toggleCollapse,
                             onToggleTrendCollapse: toggleTrendCollapse,
+                            masked: maskAmounts,
                             layoutMode: 'drawer',
                           };
                         }}
+                        masked={maskAmounts}
                       />
                     )}
                     <AnimatePresence mode="popLayout">
@@ -4165,6 +4173,7 @@ export default function HomePage() {
                               }
                               onToggleCollapse={toggleCollapse}
                               onToggleTrendCollapse={toggleTrendCollapse}
+                              masked={maskAmounts}
                             />
                         </motion.div>
                       ))}
