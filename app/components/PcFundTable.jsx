@@ -1005,7 +1005,27 @@ export default function PcFundTable({
       <style>{`
         .table-row-scroll {
           --row-bg: var(--bg);
-          background-color: var(--row-bg);
+          background-color: var(--row-bg) !important;
+        }
+        .table-row-scroll:nth-child(even),
+        .table-row-scroll.row-even {
+          background-color: var(--table-row-alt-bg) !important;
+        }
+        .table-row-scroll:hover {
+          --row-bg: var(--table-row-hover-bg);
+          background-color: var(--row-bg) !important;
+        }
+
+        /* Pinned cells inherit from parent row */
+        .table-row-scroll .pinned-cell {
+          background-color: var(--row-bg) !important;
+        }
+        .table-row-scroll:nth-child(even) .pinned-cell,
+        .table-row-scroll.row-even .pinned-cell {
+          background-color: var(--table-row-alt-bg) !important;
+        }
+        .table-row-scroll:hover .pinned-cell {
+          background-color: var(--table-row-hover-bg) !important;
         }
         .table-row-scroll:nth-child(even) {
           background-color: var(--table-row-alt-bg);

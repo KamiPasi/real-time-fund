@@ -460,8 +460,9 @@ body::before {
   background: #e2e8f0;
 }
 
-[data-theme="light"] .table-row-scroll:nth-child(even) {
-  background: var(--table-row-alt-bg);
+[data-theme="light"] .table-row-scroll:nth-child(even),
+[data-theme="light"] .table-row-scroll.row-even {
+  background: var(--table-row-alt-bg) !important;
 }
 
 [data-theme="light"] .table-fixed-row.row-hovered {
@@ -1414,8 +1415,9 @@ input[type="number"] {
   background: rgba(255, 255, 255, 0.08);
 }
 
-.table-row-scroll:nth-child(even) {
-  background: var(--table-row-alt-bg);
+.table-row-scroll:nth-child(even),
+.table-row-scroll.row-even {
+  background: var(--table-row-alt-bg) !important;
 }
 
 .table-fixed-row.row-hovered {
