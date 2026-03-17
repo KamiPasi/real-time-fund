@@ -720,7 +720,7 @@ const snapshotPingzhongdataGlobals = (fundCode) => {
   };
 };
 
-const jsonpLoadPingzhongdata = (fundCode, timeoutMs = 10000) => {
+const jsonpLoadPingzhongdata = (fundCode, timeoutMs = 20000) => {
   return new Promise((resolve, reject) => {
     if (typeof document === 'undefined' || !document.body) {
       reject(new Error('无浏览器环境'));
