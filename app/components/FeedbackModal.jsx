@@ -92,6 +92,7 @@ export default function FeedbackModal({ onClose, user, onOpenWeChat }) {
               />
             </div>
             <input type="hidden" name="email" value={user?.email || ''} />
+            <input type="hidden" name="account" value={user?.account || ''} />
             <div className="form-group" style={{ marginBottom: 20 }}>
               <label htmlFor="message" className="muted" style={{ display: 'block', marginBottom: 8, fontSize: '14px' }}>
                 反馈内容

@@ -62,7 +62,8 @@ import DcaModal from "./components/DcaModal";
 import MarketIndexAccordion from "./components/MarketIndexAccordion";
 import SortSettingModal from "./components/SortSettingModal";
 import githubImg from "./assets/github.svg";
-import { supabase, isSupabaseConfigured } from './lib/supabase';
+import { localAuth, isPasswordAuthConfigured } from './lib/localAuth';
+import { fetchServerConfig, saveServerConfig, isServerFileStorageConfigured } from './lib/serverFileStorage';
 import { toast as sonnerToast } from 'sonner';
 import { recordValuation, getAllValuationSeries, clearFund } from './lib/valuationTimeseries';
 import { loadHolidaysForYears, isTradingDay as isDateTradingDay } from './lib/tradingCalendar';
@@ -96,6 +97,7 @@ dayjs.tz.setDefault(TZ);
 const nowInTz = () => dayjs().tz(TZ);
 const toTz = (input) => (input ? dayjs.tz(input, TZ) : nowInTz());
 const formatDate = (input) => toTz(input).format('YYYY-MM-DD');
+const getUserDisplayName = (user) => user?.account || user?.email || '';
 
 function ScanButton({ onClick, disabled }) {
   return (
@@ -291,7 +293,7 @@ export default function HomePage() {
           localSortDisplayMode: sortDisplayMode,
         };
         window.localStorage.setItem('customSettings', JSON.stringify(next));
-        // 更新后标记 customSettings 脏并触发云端同步
+        // 更新后标记 customSettings 脏并触发服务器同步
         triggerCustomSettingsSync();
       } catch {
         // ignore
@@ -336,11 +338,12 @@ export default function HomePage() {
   }, []);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [loginModalOpen, setLoginModalOpen] = useState(false);
-  const [loginEmail, setLoginEmail] = useState('');
+  const [loginAccount, setLoginAccount] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState('');
-  const [loginSuccess, setLoginSuccess] = useState('');
-  const [loginOtp, setLoginOtp] = useState('');
+  const cloudSyncEnabled = Boolean(user?.id && isServerFileStorageConfigured);
+  const userDisplayName = getUserDisplayName(user);
 
   const userAvatar = useMemo(() => {
     if (!user?.id) return '';
@@ -1217,8 +1220,8 @@ export default function HomePage() {
 
   const handleOpenLogin = () => {
     setUserMenuOpen(false);
-    if (!isSupabaseConfigured) {
-      showToast('未配置 Supabase，无法登录', 'error');
+    if (!isPasswordAuthConfigured) {
+      showToast('未配置登录账号或密码，无法登录', 'error');
       return;
     }
     setLoginModalOpen(true);
@@ -1678,6 +1681,7 @@ export default function HomePage() {
   }, []);
 
   const scheduleSync = useCallback(() => {
+    if (!isServerFileStorageConfigured) return;
     if (!userIdRef.current) return;
     if (skipSyncRef.current) return;
     if (syncDebounceRef.current) clearTimeout(syncDebounceRef.current);
@@ -1708,14 +1712,15 @@ export default function HomePage() {
         lastSyncedRef.current = next;
         syncUserConfig(userIdRef.current, false, payload, false);
       }
-    }, 1000 * 5); // 往云端同步的防抖时间
-  }, []);
+    }, 1000 * 5); // 往服务器同步的防抖时间
+  }, [isServerFileStorageConfigured]);
 
   const storageHelper = useMemo(() => {
-    // 仅以下 key 参与云端同步；fundValuationTimeseries 不同步到云端（测试中功能，暂不同步）
+    // 仅以下 key 参与服务器同步；fundValuationTimeseries 不同步到服务器
     const keys = new Set(['funds', 'favorites', 'groups', 'collapsedCodes', 'collapsedTrends', 'refreshMs', 'holdings', 'pendingTrades', 'transactions', 'dcaPlans', 'customSettings']);
     const triggerSync = (key, prevValue, nextValue) => {
       if (keys.has(key)) {
+        if (!isServerFileStorageConfigured) return;
         // 标记为脏数据
         dirtyKeysRef.current.add(key);
 
@@ -1758,16 +1763,17 @@ export default function HomePage() {
         scheduleSync();
       }
     };
-  }, [getFundCodesSignature, scheduleSync]);
+  }, [getFundCodesSignature, isServerFileStorageConfigured, scheduleSync]);
 
   useEffect(() => {
-    // 仅以下 key 的变更会触发云端同步；fundValuationTimeseries 不在其中
+    // 仅以下 key 的变更会触发服务器同步；fundValuationTimeseries 不在其中
     const keys = new Set(['funds', 'favorites', 'groups', 'collapsedCodes', 'collapsedTrends', 'refreshMs', 'holdings', 'pendingTrades', 'dcaPlans', 'customSettings']);
     const onStorage = (e) => {
       if (!e.key) return;
       if (e.key === 'localUpdatedAt') {
         setLastSyncTime(e.newValue);
       }
+      if (!isServerFileStorageConfigured) return;
       if (!keys.has(e.key)) return;
       if (e.key === 'funds') {
         const prevSig = getFundCodesSignature(e.oldValue);
@@ -1781,7 +1787,7 @@ export default function HomePage() {
       window.removeEventListener('storage', onStorage);
       if (syncDebounceRef.current) clearTimeout(syncDebounceRef.current);
     };
-  }, [getFundCodesSignature, scheduleSync]);
+  }, [getFundCodesSignature, isServerFileStorageConfigured, scheduleSync]);
 
   const triggerCustomSettingsSync = useCallback(() => {
     queueMicrotask(() => {
@@ -2132,8 +2138,8 @@ export default function HomePage() {
       try {
         // 已登录用户：不在此处调用 refreshAll，等 fetchCloudConfig 完成后由 applyCloudConfig 统一刷新
         let shouldRefreshFromLocal = true;
-        if (isSupabaseConfigured) {
-          const { data, error } = await supabase.auth.getSession();
+        if (isServerFileStorageConfigured) {
+          const { data, error } = await localAuth.getSession();
           if (!cancelled && !error && data?.session?.user) {
             shouldRefreshFromLocal = false;
           }
@@ -2180,7 +2186,7 @@ export default function HomePage() {
       if (Array.isArray(savedGroups)) {
         setGroups(savedGroups);
       }
-      // 读取用户上次选择的分组（仅本地存储，不同步云端）
+      // 读取用户上次选择的分组（仅本地存储，不同步服务器）
       const savedTab = localStorage.getItem('currentTab');
       if (
         savedTab === 'all' ||
@@ -2219,9 +2225,9 @@ export default function HomePage() {
     };
     init();
     return () => { cancelled = true; };
-  }, [isSupabaseConfigured]);
+  }, [isServerFileStorageConfigured]);
 
-  // 记录用户当前选择的分组（仅本地存储，不同步云端）
+  // 记录用户当前选择的分组（仅本地存储，不同步服务器）
   useEffect(() => {
     if (!hasLocalTabInitRef.current) return;
     try {
@@ -2239,63 +2245,41 @@ export default function HomePage() {
 
   // 初始化认证状态监听
   useEffect(() => {
-    if (!isSupabaseConfigured) {
-      setUser(null);
-      setUserMenuOpen(false);
-      return;
-    }
     const clearAuthState = () => {
       setUser(null);
       setUserMenuOpen(false);
     };
 
+    const resetLoginForm = () => {
+      setLoginModalOpen(false);
+      setLoginAccount('');
+      setLoginPassword('');
+      setLoginError('');
+      setLoginLoading(false);
+    };
+
     const handleSession = async (session, event, isExplicitLogin = false) => {
       if (!session?.user) {
         if (event === 'SIGNED_OUT' && !isLoggingOutRef.current) {
-          setLoginError('会话已过期，请重新登录');
+          setLoginError('登录状态已失效，请重新登录');
           setLoginModalOpen(true);
         }
         isLoggingOutRef.current = false;
         clearAuthState();
         return;
       }
-      if (session.expires_at && session.expires_at * 1000 <= Date.now()) {
-        isLoggingOutRef.current = true;
-        await supabase.auth.signOut({ scope: 'local' });
-        try {
-          const storageKeys = Object.keys(localStorage);
-          storageKeys.forEach((key) => {
-            if (key === 'supabase.auth.token' || (key.startsWith('sb-') && key.endsWith('-auth-token'))) {
-              storageHelper.removeItem(key);
-            }
-          });
-        } catch { }
-        try {
-          const sessionKeys = Object.keys(sessionStorage);
-          sessionKeys.forEach((key) => {
-            if (key === 'supabase.auth.token' || (key.startsWith('sb-') && key.endsWith('-auth-token'))) {
-              sessionStorage.removeItem(key);
-            }
-          });
-        } catch { }
-        clearAuthState();
-        setLoginError('会话已过期，请重新登录');
-        showToast('会话已过期，请重新登录', 'error');
-        setLoginModalOpen(true);
-        return;
-      }
+
       setUser(session.user);
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
-        setLoginModalOpen(false);
-        setLoginEmail('');
-        setLoginSuccess('');
-        setLoginError('');
+      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        resetLoginForm();
       }
-      // 仅在明确的登录动作（SIGNED_IN）时检查冲突；INITIAL_SESSION（刷新页面等）不检查，直接以云端为准
-      fetchCloudConfig(session.user.id, isExplicitLogin);
+      if (isServerFileStorageConfigured) {
+        // 仅在明确的登录动作（SIGNED_IN）时检查冲突；INITIAL_SESSION（刷新页面等）不检查，直接以服务器配置为准
+        fetchCloudConfig(session.user.id, isExplicitLogin);
+      }
     };
 
-    supabase.auth.getSession().then(async ({ data, error }) => {
+    localAuth.getSession().then(async ({ data, error }) => {
       if (error) {
         clearAuthState();
         return;
@@ -2303,9 +2287,7 @@ export default function HomePage() {
       await handleSession(data?.session ?? null, 'INITIAL_SESSION');
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      // INITIAL_SESSION 会由 getSession() 主动触发，这里不再重复处理
-      if (event === 'INITIAL_SESSION') return;
+    const { data: { subscription } } = localAuth.onAuthStateChange(async (event, session) => {
       const isExplicitLogin = event === 'SIGNED_IN' && isExplicitLoginRef.current;
       await handleSession(session ?? null, event, isExplicitLogin);
       if (event === 'SIGNED_IN') {
@@ -2316,125 +2298,34 @@ export default function HomePage() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // 实时同步
-  // useEffect(() => {
-  //   if (!isSupabaseConfigured || !user?.id) return;
-  //   const channel = supabase
-  //     .channel(`user-configs-${user.id}`)
-  //     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'user_configs', filter: `user_id=eq.${user.id}` }, async (payload) => {
-  //       const incoming = payload?.new?.data;
-  //       if (!isPlainObject(incoming)) return;
-  //       const incomingComparable = getComparablePayload(incoming);
-  //       if (!incomingComparable || incomingComparable === lastSyncedRef.current) return;
-  //       await applyCloudConfig(incoming, payload.new.updated_at);
-  //     })
-  //     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'user_configs', filter: `user_id=eq.${user.id}` }, async (payload) => {
-  //       const incoming = payload?.new?.data;
-  //       if (!isPlainObject(incoming)) return;
-  //       const incomingComparable = getComparablePayload(incoming);
-  //       if (!incomingComparable || incomingComparable === lastSyncedRef.current) return;
-  //       await applyCloudConfig(incoming, payload.new.updated_at);
-  //     })
-  //     .subscribe();
-  //   return () => {
-  //     supabase.removeChannel(channel);
-  //   };
-  // }, [user?.id]);
-
-  const handleSendOtp = async (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
-    setLoginSuccess('');
-    if (!isSupabaseConfigured) {
-      showToast('未配置 Supabase，无法登录', 'error');
+    if (!isPasswordAuthConfigured) {
+      showToast('未配置登录账号或密码，无法登录', 'error');
       return;
     }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!loginEmail.trim()) {
-      setLoginError('请输入邮箱地址');
+    if (!loginAccount.trim()) {
+      setLoginError('请输入账号');
       return;
     }
-    if (!emailRegex.test(loginEmail.trim())) {
-      setLoginError('请输入有效的邮箱地址');
+    if (!loginPassword) {
+      setLoginError('请输入密码');
       return;
     }
 
     setLoginLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithOtp({
-        email: loginEmail.trim(),
-        options: {
-          shouldCreateUser: true
-        }
+      isExplicitLoginRef.current = true;
+      const { error } = await localAuth.signInWithPassword({
+        account: loginAccount.trim(),
+        password: loginPassword
       });
       if (error) throw error;
-      setLoginSuccess('验证码已发送，请查收邮箱输入验证码完成注册/登录');
     } catch (err) {
-      if (err.message?.includes('rate limit')) {
-        setLoginError('请求过于频繁，请稍后再试');
-      } else if (err.message?.includes('network')) {
-        setLoginError('网络错误，请检查网络连接');
-      } else {
-        setLoginError(err.message || '发送验证码失败，请稍后再试');
-      }
+      setLoginError(err.message || '登录失败，请稍后再试');
+      isExplicitLoginRef.current = false;
     } finally {
-      setLoginLoading(false);
-    }
-  };
-
-  const handleVerifyEmailOtp = async () => {
-    setLoginError('');
-    if (!loginOtp || loginOtp.length < 4) {
-      setLoginError('请输入邮箱中的验证码');
-      return;
-    }
-    if (!isSupabaseConfigured) {
-      showToast('未配置 Supabase，无法登录', 'error');
-      return;
-    }
-    try {
-      isExplicitLoginRef.current = true;
-      setLoginLoading(true);
-      const { data, error } = await supabase.auth.verifyOtp({
-        email: loginEmail.trim(),
-        token: loginOtp.trim(),
-        type: 'email'
-      });
-      if (error) throw error;
-      if (data?.user) {
-        setLoginModalOpen(false);
-        setLoginEmail('');
-        setLoginOtp('');
-        setLoginSuccess('');
-        setLoginError('');
-      }
-    } catch (err) {
-      setLoginError(err.message || '验证失败，请检查验证码或稍后再试');
-      isExplicitLoginRef.current = false;
-    }
-    setLoginLoading(false);
-  };
-
-  const handleGithubLogin = async () => {
-    setLoginError('');
-    if (!isSupabaseConfigured) {
-      showToast('未配置 Supabase，无法登录', 'error');
-      return;
-    }
-    try {
-      isExplicitLoginRef.current = true;
-      setLoginLoading(true);
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'github',
-        options: {
-          redirectTo: window.location.origin
-        }
-      });
-      if (error) throw error;
-    } catch (err) {
-      setLoginError(err.message || 'GitHub 登录失败，请稍后再试');
-      isExplicitLoginRef.current = false;
       setLoginLoading(false);
     }
   };
@@ -2442,52 +2333,17 @@ export default function HomePage() {
   // 登出
   const handleLogout = async () => {
     isLoggingOutRef.current = true;
-    if (!isSupabaseConfigured) {
-      setLoginModalOpen(false);
-      setLoginError('');
-      setLoginSuccess('');
-      setLoginEmail('');
-      setLoginOtp('');
-      setUserMenuOpen(false);
-      setUser(null);
-      return;
-    }
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        const { error } = await supabase.auth.signOut({ scope: 'local' });
-        if (error && error.code !== 'session_not_found') {
-          throw error;
-        }
-      }
+      const { error } = await localAuth.signOut();
+      if (error) throw error;
     } catch (err) {
-      showToast(err.message, 'error')
+      showToast(err.message || '登出失败，请稍后再试', 'error');
       console.error('登出失败', err);
     } finally {
-      try {
-        await supabase.auth.signOut({ scope: 'local' });
-      } catch { }
-      try {
-        const storageKeys = Object.keys(localStorage);
-        storageKeys.forEach((key) => {
-          if (key === 'supabase.auth.token' || (key.startsWith('sb-') && key.endsWith('-auth-token'))) {
-            storageHelper.removeItem(key);
-          }
-        });
-      } catch { }
-      try {
-        const sessionKeys = Object.keys(sessionStorage);
-        sessionKeys.forEach((key) => {
-          if (key === 'supabase.auth.token' || (key.startsWith('sb-') && key.endsWith('-auth-token'))) {
-            sessionStorage.removeItem(key);
-          }
-        });
-      } catch { }
       setLoginModalOpen(false);
       setLoginError('');
-      setLoginSuccess('');
-      setLoginEmail('');
-      setLoginOtp('');
+      setLoginAccount('');
+      setLoginPassword('');
       setUserMenuOpen(false);
       setUser(null);
     }
@@ -3057,7 +2913,7 @@ export default function HomePage() {
   const collectLocalPayload = (keys = null) => {
     try {
       const all = {};
-      // 不包含 fundValuationTimeseries，该数据暂不同步到云端
+      // 不包含 fundValuationTimeseries，该数据暂不同步到服务器
       if (!keys || keys.has('funds')) {
         all.funds = JSON.parse(localStorage.getItem('funds') || '[]');
       }
@@ -3190,6 +3046,26 @@ export default function HomePage() {
     }
   };
 
+  function isMeaningfulPayload(payload) {
+    if (!isPlainObject(payload)) return false;
+    const normalized = getComparablePayload(payload);
+    if (!normalized) return false;
+    const empty = getComparablePayload({
+      funds: [],
+      favorites: [],
+      groups: [],
+      collapsedCodes: [],
+      collapsedTrends: [],
+      refreshMs: 30000,
+      holdings: {},
+      pendingTrades: [],
+      transactions: {},
+      dcaPlans: {},
+      customSettings: {}
+    });
+    return normalized !== empty;
+  }
+
   const applyCloudConfig = async (cloudData, cloudUpdatedAt) => {
     if (!isPlainObject(cloudData)) return;
     skipSyncRef.current = true;
@@ -3252,7 +3128,7 @@ export default function HomePage() {
       if (nextFunds.length) {
         const codes = Array.from(new Set(nextFunds.map((f) => f.code)));
         if (codes.length) await refreshAll(codes);
-        // 刷新完成后,强制同步本地localStorage 的 funds 数据到云端
+        // 刷新完成后，强制把最新 funds 回写到服务器
         const currentUserId = userIdRef.current || user?.id;
         if (currentUserId) {
           try {
@@ -3268,7 +3144,7 @@ export default function HomePage() {
               );
             }
           } catch (e) {
-            console.error('刷新后强制同步 funds 到云端失败', e);
+            console.error('刷新后强制同步 funds 到服务器失败', e);
           }
         }
       }
@@ -3281,100 +3157,71 @@ export default function HomePage() {
   };
 
   const fetchCloudConfig = async (userId, checkConflict = false) => {
-    if (!userId) return;
+    if (!isServerFileStorageConfigured || !userId) return;
     try {
-      // 一次查询同时拿到 meta 与 data，方便两种模式复用
-      const { data: meta, error: metaError } = await supabase
-        .from('user_configs')
-        .select('id, data, updated_at')
-        .eq('user_id', userId)
-        .maybeSingle();
+      const remoteConfig = await fetchServerConfig(userId);
+      const localPayload = collectLocalPayload();
+      const localComparable = getComparablePayload(localPayload);
+      const hasLocalData = isMeaningfulPayload(localPayload);
+      const cloudPayload = isPlainObject(remoteConfig?.data) ? remoteConfig.data : {};
+      const cloudComparable = getComparablePayload(cloudPayload);
+      const hasCloudData = isMeaningfulPayload(cloudPayload);
 
-      if (metaError) throw metaError;
-
-      if (!meta?.id) {
-        const { error: insertError } = await supabase
-          .from('user_configs')
-          .insert({ user_id: userId });
-        if (insertError) throw insertError;
-        setCloudConfigModal({ open: true, userId, type: 'empty' });
+      if (!remoteConfig?.exists) {
+        if (hasLocalData) {
+          await syncUserConfig(userId, false, localPayload, false);
+        }
         return;
       }
 
-      // 冲突检查模式：使用 meta.data 弹出冲突确认弹窗
-      if (checkConflict) {
-        setCloudConfigModal({ open: true, userId, type: 'conflict', cloudData: meta.data });
+      if (!hasCloudData) {
+        if (hasLocalData) {
+          await syncUserConfig(userId, false, localPayload, false);
+        }
         return;
       }
 
-      // 非冲突检查模式：直接复用上方查询到的 meta 数据，覆盖本地
-      if (meta.data && isPlainObject(meta.data) && Object.keys(meta.data).length > 0) {
-        await applyCloudConfig(meta.data, meta.updated_at);
+      if (!checkConflict || !hasLocalData) {
+        await applyCloudConfig(cloudPayload, remoteConfig.updatedAt);
         return;
       }
 
-      setCloudConfigModal({ open: true, userId, type: 'empty' });
+      if (localComparable === cloudComparable) {
+        if (remoteConfig.updatedAt) {
+          storageHelper.setItem('localUpdatedAt', remoteConfig.updatedAt);
+        }
+        lastSyncedRef.current = cloudComparable;
+        return;
+      }
+
+      setCloudConfigModal({ open: true, userId, type: 'conflict', cloudData: cloudPayload });
     } catch (e) {
-      console.error('获取云端配置失败', e);
+      console.error('获取服务器配置失败', e);
     }
   };
 
   const syncUserConfig = async (userId, showTip = true, payload = null, isPartial = false) => {
+    if (!isServerFileStorageConfigured) {
+      if (showTip) {
+        showToast('未启用服务器文件存储，无法同步配置', 'error');
+      }
+      return;
+    }
     if (!userId) {
       showToast(`userId 不存在，请重新登录`, 'error');
       return;
     }
     try {
       setIsSyncing(true);
-      const dataToSync = payload || collectLocalPayload(); // Fallback to full sync if no payload
-      const now = nowInTz().toISOString();
-
-      if (isPartial) {
-        // 增量更新：使用 RPC 调用
-        const { error: rpcError } = await supabase.rpc('update_user_config_partial', {
-          payload: dataToSync
-        });
-
-        if (rpcError) {
-          console.error('增量同步失败，尝试全量同步', rpcError);
-          // RPC 失败回退到全量更新
-          const fullPayload = collectLocalPayload();
-          const { error } = await supabase
-            .from('user_configs')
-            .upsert(
-              {
-                user_id: userId,
-                data: fullPayload,
-                updated_at: now
-              },
-              { onConflict: 'user_id' }
-            );
-          if (error) throw error;
-        }
-      } else {
-        // 全量更新
-        const { error } = await supabase
-          .from('user_configs')
-          .upsert(
-            {
-              user_id: userId,
-              data: dataToSync,
-              updated_at: now
-            },
-            { onConflict: 'user_id' }
-          );
-        if (error) throw error;
-      }
-
-      storageHelper.setItem('localUpdatedAt', now);
+      const dataToSync = isPartial ? collectLocalPayload() : (payload || collectLocalPayload());
+      const { updatedAt } = await saveServerConfig(userId, dataToSync);
+      storageHelper.setItem('localUpdatedAt', updatedAt || nowInTz().toISOString());
 
       if (showTip) {
-        setSuccessModal({ open: true, message: '已同步云端配置' });
+        setSuccessModal({ open: true, message: '已同步服务器配置' });
       }
     } catch (e) {
-      console.error('同步云端配置异常', e);
-      // 临时关闭同步异常提示
-      // showToast(`同步云端配置异常:${e}`, 'error');
+      console.error('同步服务器配置异常', e);
     } finally {
       setIsSyncing(false);
     }
@@ -3695,7 +3542,7 @@ export default function HomePage() {
               justifyContent: 'center',
               overflow: 'hidden',
             }}
-            title={isSyncing ? '正在同步到云端...' : undefined}
+            title={isSyncing ? '正在同步到服务器...' : undefined}
           >
             {/* 同步中图标 */}
             <svg
@@ -3909,7 +3756,7 @@ export default function HomePage() {
               className={`icon-button user-menu-trigger ${user ? 'logged-in' : ''}`}
               aria-label={user ? '用户菜单' : '登录'}
               onClick={() => setUserMenuOpen(!userMenuOpen)}
-              title={user ? (user.email || '用户') : '用户菜单'}
+              title={user ? (userDisplayName || '用户') : '用户菜单'}
             >
               {user ? (
                 <div className="user-avatar-small">
@@ -3923,7 +3770,7 @@ export default function HomePage() {
                       style={{ borderRadius: '50%' }}
                     />
                   ) : (
-                    (user.email?.charAt(0).toUpperCase() || 'U')
+                    (userDisplayName?.charAt(0).toUpperCase() || 'U')
                   )}
                 </div>
               ) : (
@@ -3955,13 +3802,13 @@ export default function HomePage() {
                               style={{ borderRadius: '50%' }}
                             />
                           ) : (
-                            (user.email?.charAt(0).toUpperCase() || 'U')
+                            (userDisplayName?.charAt(0).toUpperCase() || 'U')
                           )}
                         </div>
                         <div className="user-info">
-                          <span className="user-email">{user.email}</span>
-                          <span className="user-status">已登录</span>
-                          {lastSyncTime && (
+                          <span className="user-email">{userDisplayName}</span>
+                          <span className="user-status">{cloudSyncEnabled ? '已登录（服务器同步）' : '已登录（本地）'}</span>
+                          {cloudSyncEnabled && lastSyncTime && (
                             <span className="muted" style={{ fontSize: '10px', marginTop: 2 }}>
                               同步于 {dayjs(lastSyncTime).format('MM-DD HH:mm')}
                             </span>
@@ -3969,26 +3816,28 @@ export default function HomePage() {
                         </div>
                       </div>
                       <div className="user-menu-divider" />
-                      <button
-                        className="user-menu-item"
-                        disabled={isSyncing}
-                        onClick={async () => {
-                          setUserMenuOpen(false);
-                          if (user?.id) await syncUserConfig(user.id);
-                        }}
-                        title="手动同步配置到云端"
-                      >
-                        {isSyncing ? (
-                          <span className="loading-spinner" style={{ width: 16, height: 16, border: '2px solid var(--muted)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 1s linear infinite', flexShrink: 0 }} />
-                        ) : (
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                            <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" stroke="var(--primary)" />
-                            <path d="M12 12v9" stroke="var(--accent)" />
-                            <path d="m16 16-4-4-4 4" stroke="var(--accent)" />
-                          </svg>
-                        )}
-                        <span>{isSyncing ? '同步中...' : '同步'}</span>
-                      </button>
+                      {cloudSyncEnabled && (
+                        <button
+                          className="user-menu-item"
+                          disabled={isSyncing}
+                          onClick={async () => {
+                            setUserMenuOpen(false);
+                            if (user?.id) await syncUserConfig(user.id);
+                          }}
+                          title="手动同步配置到服务器"
+                        >
+                          {isSyncing ? (
+                            <span className="loading-spinner" style={{ width: 16, height: 16, border: '2px solid var(--muted)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 1s linear infinite', flexShrink: 0 }} />
+                          ) : (
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                              <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" stroke="var(--primary)" />
+                              <path d="M12 12v9" stroke="var(--accent)" />
+                              <path d="m16 16-4-4-4 4" stroke="var(--accent)" />
+                            </svg>
+                          )}
+                          <span>{isSyncing ? '同步中...' : '同步'}</span>
+                        </button>
+                      )}
                       <button
                         className="user-menu-item"
                         onClick={() => {
@@ -4911,21 +4760,17 @@ export default function HomePage() {
           onClose={() => {
             setLoginModalOpen(false);
             setLoginError('');
-            setLoginSuccess('');
-            setLoginEmail('');
-            setLoginOtp('');
+            setLoginAccount('');
+            setLoginPassword('');
             setLoginLoading(false);
           }}
-          loginEmail={loginEmail}
-          setLoginEmail={setLoginEmail}
-          loginOtp={loginOtp}
-          setLoginOtp={setLoginOtp}
+          loginAccount={loginAccount}
+          setLoginAccount={setLoginAccount}
+          loginPassword={loginPassword}
+          setLoginPassword={setLoginPassword}
           loginLoading={loginLoading}
           loginError={loginError}
-          loginSuccess={loginSuccess}
-          handleSendOtp={handleSendOtp}
-          handleVerifyEmailOtp={handleVerifyEmailOtp}
-          handleGithubLogin={isSupabaseConfigured ? handleGithubLogin : undefined}
+          handleLogin={handleLogin}
         />
       )}
 

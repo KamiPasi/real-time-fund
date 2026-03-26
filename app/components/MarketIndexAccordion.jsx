@@ -288,7 +288,7 @@ export default function MarketIndexAccordion({
       // 本地首选 key：独立存储，便于快速读取
       window.localStorage.setItem('marketIndexSelected', JSON.stringify(selectedCodes));
 
-      // 同步到 customSettings，便于云端同步
+      // 同步到 customSettings，便于服务器同步
       const raw = window.localStorage.getItem('customSettings');
       const parsed = raw ? JSON.parse(raw) : {};
       const next = parsed && typeof parsed === 'object' ? { ...parsed, marketIndexSelected: selectedCodes } : { marketIndexSelected: selectedCodes };

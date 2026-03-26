@@ -27,7 +27,7 @@
 - **持仓管理**：记录每只基金的持有份额和成本价，自动计算持仓收益和累计收益。
 - **交易记录**：支持买入/卖出操作，记录交易历史，支持查看单个基金的交易明细。
 - **定投计划**：支持设置自动定投计划，可按日/周/月等周期自动生成买入交易。
-- **云端同步**：通过 Supabase 云端备份数据，支持多设备间数据同步与冲突处理。
+- **远端存储**：支持在自托管服务器上将同一账号的配置写入本地 JSON 文件，换浏览器登录后可恢复同一份配置。
 - **自定义排序**：支持多种排序规则（估值涨跌幅、持仓收益、持有金额等），可自由组合和启用/禁用规则。
 - **拖拽排序**：在默认排序模式下可通过拖拽调整基金顺序。
 - **明暗主题**：支持亮色/暗色主题切换，一键换肤。
@@ -42,7 +42,7 @@
   - 基金估值：天天基金 (JSONP)
   - 重仓数据：东方财富 (HTML Parsing)
   - 股票行情：腾讯财经 (Script Tag Injection)
-- **部署**：GitHub Actions + GitHub Pages
+- **部署**：GitHub Actions + GitHub Pages / Docker Compose
 
 ## 🚀 快速开始
 
@@ -64,13 +64,15 @@
    cp env.example .env.local
    ```
    按照 `env.example` 填入以下值：
-  - `NEXT_PUBLIC_Supabase_URL`：Supabase 项目 URL
-  - `NEXT_PUBLIC_Supabase_ANON_KEY`：Supabase 匿名公钥
+  - `NEXT_PUBLIC_LOGIN_ACCOUNT`：登录账号
+  - `NEXT_PUBLIC_LOGIN_PASSWORD`：登录密码
+  - `NEXT_PUBLIC_ENABLE_SERVER_FILE_STORAGE`：是否启用服务器文件存储；本地 `npm run dev` 建议保持 `false`
+  - `CONFIG_STORAGE_FILE`：服务器配置文件路径，仅 Docker / 自定义 Node 服务使用
   - `NEXT_PUBLIC_WEB3FORMS_ACCESS_KEY`：Web3Forms Access Key
   - `NEXT_PUBLIC_GA_ID`：Google Analytics Measurement ID（如 `G-xxxx`）
   - `NEXT_PUBLIC_GITHUB_LATEST_RELEASE_URL`：GitHub 最新 Release 接口地址，用于在页面中展示“发现新版本”提示（如：`https://api.github.com/repos/hzm0321/real-time-fund/releases/latest`）
 
-注：如不使用登录、反馈或 GA 统计功能，可不设置对应变量
+注：如不使用服务器文件存储、反馈或 GA 统计功能，可不设置对应变量
 
 4. 运行开发服务器：
    ```bash
@@ -78,85 +80,44 @@
    ```
    访问 [http://localhost:3000](http://localhost:3000) 查看效果。
 
-### Supabase 配置说明
-1. NEXT_PUBLIC_Supabase_URL 和 NEXT_PUBLIC_Supabase_ANON_KEY 获取
+### 登录与服务器存储说明
+1. 配置固定账号密码
 
-   NEXT_PUBLIC_Supabase_URL：Supabase控制台 → Project Settings → General → Project ID  
-   NEXT_PUBLIC_Supabase_ANON_KEY： Supabase控制台 → Project Settings → API Keys → Publishable key
-
-   示例：
+   在 `.env.local` 或 `.env` 中设置：
    ```
-   NEXT_PUBLIC_SUPABASE_URL=https://abcdefghijklmnop.supabase.co
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=xxxxxx
+   NEXT_PUBLIC_LOGIN_ACCOUNT=admin
+   NEXT_PUBLIC_LOGIN_PASSWORD=change_me
+   ```
+   页面登录框会直接校验这两个值，并基于账号生成固定 `user_id`。
+
+2. 配置服务器文件存储
+
+   服务器文件存储只在 Docker / 自托管 Node 服务下可用，静态托管（如 GitHub Pages）不支持。
+
+   Docker Compose 推荐设置：
+   ```
+   NEXT_PUBLIC_ENABLE_SERVER_FILE_STORAGE=true
+   CONFIG_STORAGE_FILE=/app/data/config-store.json
    ```
 
-2. 邮件数量修改
+   登录后的行为：
+   - 同账号首次在新浏览器登录时，会自动读取服务器文件中的配置并覆盖本地空数据。
+   - 如果服务器还没有该账号的配置，而本地已有数据，会自动把本地配置写入服务器文件。
+   - 只有本地和服务器都存在且内容不一致时，才会弹出冲突选择框。
 
-    Supabase 免费项目自带每小时2条邮件服务。如果觉得额度不够，可以改成自己的邮箱SMTP。修改路径在 Supabase控制台 → Authentication → Email → SMTP Settings。  
-    之后可在 Rate Limits ，自由修改每小时邮件数量。
+3. 安全说明
 
-3. 修改接收到的邮件为验证码  
-
-    在 Supabase控制台 → Authentication → Email Templates 中，选择 **Magic Link** 模板进行编辑，在邮件正文中使用变量 `{{ .Token }}` 展示验证码。  
-
-4. 修改验证码位数  
-
-    官方验证码位数默认为8位，可自行修改。常见一般为6位。
-   在 Supabase控制台 → Authentication → Sign In / Providers → Auth Providers → email → Minimum password length  和 Email OTP Length 都改为6位。
-
-5. 关闭确认邮件
-
-    在 Supabase控制台 → Authentication → Sign In / Providers → Auth Providers → email 中，关闭 **Confirm email** 选项。这样用户注册后就不需要再去邮箱点击确认链接了，直接使用验证码登录即可。
-
-6. 配置 GitHub 登录（可选）
-
-   如需支持 GitHub OAuth 登录，需完成以下配置：
-
-   **第一步：在 GitHub 创建 OAuth App**
-   - 访问 GitHub → Settings → Developer settings → OAuth Apps → New OAuth App
-   - 填写信息：
-     - Application name：自定义应用名称
-     - Homepage URL：你的应用地址（如 `https://hzm0321.github.io/real-time-fund/`）
-     - Authorization callback URL：`https://<your-supabase-project-id>.supabase.co/auth/v1/callback`
-   - 创建后获取 **Client ID** 和 **Client Secret**
-
-   **第二步：在 Supabase 启用 GitHub Provider**
-   - Supabase控制台 → Authentication → Sign In / Providers → Auth Providers → GitHub
-   - 开启 **GitHub** 开关
-   - 填入 GitHub OAuth App 的 **Client ID** 和 **Client Secret**
-   - 点击 **Save** 保存
-
-   **第三步：配置站点 URL（重要）**
-   - Supabase控制台 → Authentication → URL Configuration
-   - **Site URL**：设置为你的应用主域名（如 `https://hzm0321.github.io/`）
-   - **Redirect URLs**：添加你的应用完整路径（如 `https://hzm0321.github.io/real-time-fund/`）
-
-   配置完成后，用户即可通过 GitHub 账号一键登录。
-
-7. 执行数据库初始化 SQL
-
-   项目需要创建 `user_configs` 表及相关策略才能使用云端同步功能。SQL 语句位于项目 `/doc/supabase.sql` 文件。
-
-   **执行步骤：**
-   - Supabase控制台 → SQL Editor → New query
-   - 复制 `/doc/supabase.sql` 文件中的全部内容，粘贴到编辑器
-   - 点击 **Run** 执行
-
-   SQL 脚本将完成以下操作：
-   - 创建 `user_configs` 表（存储用户配置数据）
-   - 启用行级安全（RLS），确保用户只能访问自己的数据
-   - 创建 SELECT / INSERT / UPDATE 策略
-   - 创建 `update_user_config_partial` 函数（用于增量更新配置）
-
-   执行成功后，可在 Table Editor 中看到 `user_configs` 表。
-
-更多 Supabase 相关内容查阅官方文档。
+   本项目仍是前端环境变量校验，`NEXT_PUBLIC_*` 变量会出现在浏览器端资源中。  
+   因此当前“账号密码登录 + 服务器文件存储”只适合自用、内网或低安全要求场景，不适合作为真正的高安全认证方案。  
+   如果公开部署，能够访问页面资源的人理论上都可以拿到这套登录信息。
 
 ### 构建与部署
 
 本项目已配置 GitHub Actions。每次推送到 `main` 分支时，会自动执行构建并部署到 GitHub Pages。
 如需使用 GitHub Actions 部署，请在 GitHub 项目 Settings → Secrets and variables → Actions 中创建对应的 Repository secrets（字段名称与 `.env.local` 保持一致）。
-包括：`NEXT_PUBLIC_Supabase_URL`、`NEXT_PUBLIC_Supabase_ANON_KEY`、`NEXT_PUBLIC_WEB3FORMS_ACCESS_KEY`、`NEXT_PUBLIC_GA_ID`、`NEXT_PUBLIC_GITHUB_LATEST_RELEASE_URL`。
+包括：`NEXT_PUBLIC_LOGIN_ACCOUNT`、`NEXT_PUBLIC_LOGIN_PASSWORD`、`NEXT_PUBLIC_WEB3FORMS_ACCESS_KEY`、`NEXT_PUBLIC_GA_ID`、`NEXT_PUBLIC_GITHUB_LATEST_RELEASE_URL`。
+
+说明：GitHub Pages 只能运行静态导出版本，因此不支持服务器文件存储；该模式仅适用于本地存储。
 
 若要手动构建：
 ```bash
@@ -164,14 +125,14 @@ npm run build
 ```
 静态文件将生成在 `out` 目录下。
 
-### Docker运行
+### Docker 运行
 
-镜像支持两种配置方式：
+镜像会启动一个 Node 进程，同时提供静态页面和 `/api/config` 文件存储接口。若要实现跨浏览器同步，请务必挂载数据卷保存 `/app/data`。
 
 - **构建时写入**：构建时通过 `--build-arg` 或 `.env` 传入 `NEXT_PUBLIC_*`，值会打进镜像，运行时无需再传。
-- **运行时替换**：构建时不传（或使用默认占位符），启动容器时通过 `-e` 或 `--env-file` 传入，入口脚本会在启动 Nginx 前替换静态资源中的占位符。
+- **运行时替换**：构建时不传（或使用默认占位符），启动容器时通过 `-e` 或 `--env-file` 传入，入口脚本会在启动 Node 服务前替换静态资源中的占位符。
 
-可复制 `env.example` 为 `.env` 并填入实际值；若不用登录/反馈功能可留空。
+可复制 `env.example` 为 `.env` 并填入实际值；若要启用服务器文件存储，请将 `NEXT_PUBLIC_ENABLE_SERVER_FILE_STORAGE=true`。
 
 1. 构建镜像
 ```bash
@@ -179,21 +140,23 @@ npm run build
 docker build -t real-time-fund .
 
 # 方式 B：构建时写入配置
-docker build -t real-time-fund --build-arg NEXT_PUBLIC_SUPABASE_URL=xxx --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=xxx .
+docker build -t real-time-fund --build-arg NEXT_PUBLIC_LOGIN_ACCOUNT=admin --build-arg NEXT_PUBLIC_LOGIN_PASSWORD=change_me --build-arg NEXT_PUBLIC_ENABLE_SERVER_FILE_STORAGE=true .
 # 或依赖同目录 .env：docker compose build
 ```
 
 2. 启动容器
 ```bash
 # 若构建时未写入配置，可在此注入（与 --env-file .env 二选一）
-docker run -d -p 3000:3000 --name fund --env-file .env real-time-fund
+docker run -d -p 3000:3000 --name fund --env-file .env -v real-time-fund-data:/app/data real-time-fund
 ```
 
 #### docker-compose（会读取同目录 `.env` 作为 build-arg 与运行环境）
 ```bash
-# 建议先：cp env.example .env 并编辑 .env
+# 建议先：cp env.example .env 并将 NEXT_PUBLIC_ENABLE_SERVER_FILE_STORAGE 改为 true
 docker compose up -d
 ```
+
+[`docker-compose.yml`](./docker-compose.yml) 已内置命名卷 `config_data`，默认会把配置文件持久化到容器内 `/app/data/config-store.json`。
 
 ### Docker Hub
 
@@ -207,16 +170,16 @@ docker compose up -d
 2. **启动容器**  
    访问 [http://localhost:3000](http://localhost:3000) 即可使用。
    ```bash
-   docker run -d -p 3000:3000 --name real-time-fund --restart always hzm0321/real-time-fund:latest
+   docker run -d -p 3000:3000 --name real-time-fund --restart always -v real-time-fund-data:/app/data hzm0321/real-time-fund:latest
    ```
 
 3. **使用自定义环境变量（运行时替换）**  
    镜像内已预置占位符，启动时通过环境变量即可覆盖，无需重新构建。例如使用本地 `.env`：
    ```bash
-   docker run -d -p 3000:3000 --name real-time-fund --restart always --env-file .env hzm0321/real-time-fund:latest
+   docker run -d -p 3000:3000 --name real-time-fund --restart always --env-file .env -v real-time-fund-data:/app/data hzm0321/real-time-fund:latest
    ```
-   或单独指定变量：`-e NEXT_PUBLIC_SUPABASE_URL=xxx -e NEXT_PUBLIC_SUPABASE_ANON_KEY=xxx`。  
-   变量名与本地开发一致：`NEXT_PUBLIC_SUPABASE_URL`、`NEXT_PUBLIC_SUPABASE_ANON_KEY`、`NEXT_PUBLIC_WEB3FORMS_ACCESS_KEY`、`NEXT_PUBLIC_GA_ID`、`NEXT_PUBLIC_GITHUB_LATEST_RELEASE_URL`。
+   或单独指定变量：`-e NEXT_PUBLIC_LOGIN_ACCOUNT=admin -e NEXT_PUBLIC_LOGIN_PASSWORD=change_me -e NEXT_PUBLIC_ENABLE_SERVER_FILE_STORAGE=true`。  
+   变量名与本地开发一致：`NEXT_PUBLIC_LOGIN_ACCOUNT`、`NEXT_PUBLIC_LOGIN_PASSWORD`、`NEXT_PUBLIC_ENABLE_SERVER_FILE_STORAGE`、`NEXT_PUBLIC_WEB3FORMS_ACCESS_KEY`、`NEXT_PUBLIC_GA_ID`、`NEXT_PUBLIC_GITHUB_LATEST_RELEASE_URL`，以及仅服务端使用的 `CONFIG_STORAGE_FILE`。
 
 ## 📖 使用说明
 

@@ -6,7 +6,7 @@
 
 ## OVERVIEW
 
-Real-time mutual fund valuation tracker (基估宝). Next.js 16 App Router, pure JavaScript (JSX, no TypeScript), static export to GitHub Pages. Glassmorphism UI with heavy custom CSS variables (3557-line globals.css). All data via JSONP/script injection to external Chinese financial APIs (天天基金, 东方财富, 腾讯财经). localStorage as primary database; Supabase for optional cloud sync.
+Real-time mutual fund valuation tracker (基估宝). Next.js 16 App Router, pure JavaScript (JSX, no TypeScript), static export to GitHub Pages. Glassmorphism UI with heavy custom CSS variables (3557-line globals.css). All data via JSONP/script injection to external Chinese financial APIs (天天基金, 东方财富, 腾讯财经). localStorage as primary database; self-hosted Docker deployments can persist config to a server-side JSON file.
 
 ## STRUCTURE
 
@@ -18,19 +18,20 @@ real-time-fund/
 │   ├── globals.css               # Tailwind v4 + glassmorphism CSS variables (~3557 lines)
 │   ├── api/fund.js               # ALL external data fetching (~954 lines, JSONP + script injection)
 │   ├── components/               # 47 app-specific UI components (modals, cards, tables, charts)
-│   ├── lib/                      # Core utilities: supabase, cacheRequest, tradingCalendar, valuationTimeseries
+│   ├── lib/                      # Core utilities: localAuth, serverFileStorage, cacheRequest, tradingCalendar, valuationTimeseries
 │   ├── hooks/                    # Custom hooks: useBodyScrollLock, useFundFuzzyMatcher
 │   └── assets/                   # Static images (GitHub SVG, donation QR codes)
 ├── components/ui/                # 15 shadcn/ui primitives (accordion, button, dialog, drawer, etc.)
 ├── lib/utils.js                  # cn() helper only (clsx + tailwind-merge)
 ├── public/                       # Static: allFund.json, PWA manifest, service worker, icon
-├── doc/                          # Documentation: localStorage schema, Supabase SQL, dev group QR
+├── doc/                          # Documentation: localStorage schema, legacy Supabase SQL, dev group QR
 ├── .github/workflows/            # CI/CD: nextjs.yml (GitHub Pages), docker-ci.yml (Docker build)
 ├── .husky/                       # Pre-commit: lint-staged → ESLint
-├── Dockerfile                    # Multi-stage: Node 22 build → Nginx Alpine serve
+├── Dockerfile                    # Multi-stage: Node 22 build → Node 22 runtime server
 ├── docker-compose.yml            # Docker Compose config
-├── entrypoint.sh                 # Runtime env var placeholder replacement
-├── nginx.conf                    # Nginx config (port 3000, SPA fallback)
+├── entrypoint.sh                 # Runtime env var placeholder replacement + server bootstrap
+├── server.js                     # Static file server + local JSON config API
+├── nginx.conf                    # Legacy Nginx config (no longer used by Docker runner)
 ├── next.config.js                # Static export, reactStrictMode, reactCompiler
 ├── jsconfig.json                 # Path aliases: @/* → ./*
 ├── eslint.config.mjs             # ESLint flat config: next/core-web-vitals
@@ -49,7 +50,7 @@ real-time-fund/
 | Desktop table | `app/components/PcFundTable.jsx` | PC-specific table layout |
 | Mobile table | `app/components/MobileFundTable.jsx` | Mobile-specific layout, swipe actions |
 | Holding calculations | `app/page.jsx` (getHoldingProfit) | Profit/loss computation |
-| Cloud sync | `app/lib/supabase.js` + page.jsx sync functions | Supabase auth + data sync |
+| Remote sync | `app/lib/serverFileStorage.js` + `server.js` + page.jsx sync functions | Self-hosted file-based config sync |
 | Trading/DCA | `app/components/TradeModal.jsx`, `DcaModal.jsx` | Buy/sell, dollar-cost averaging |
 | Fund fuzzy search | `app/hooks/useFundFuzzyMatcher.js` | Fuse.js based name/code matching |
 | OCR import | `app/page.jsx` (processFiles) | Tesseract.js + LLM parsing |
@@ -61,7 +62,7 @@ real-time-fund/
 | CI/CD | `.github/workflows/nextjs.yml` | Build + deploy to GitHub Pages |
 | Docker | `Dockerfile`, `docker-compose.yml` | Multi-stage build with runtime env injection |
 | localStorage schema | `doc/localStorage 数据结构.md` | Full documentation of stored data shapes |
-| Supabase schema | `doc/supabase.sql` | Database tables for cloud sync |
+| Legacy Supabase schema | `doc/supabase.sql` | Historical reference only |
 
 ## CONVENTIONS
 
@@ -69,7 +70,7 @@ real-time-fund/
 - **No src/ directory** — app/, components/, lib/ at root level.
 - **Static export** — `output: 'export'` in next.config.js. No server-side runtime.
 - **JSONP + script injection** — all external API calls bypass CORS via `<script>` tags, not fetch().
-- **localStorage-first** — all user data stored locally; Supabase sync is optional/secondary.
+- **localStorage-first** — all user data stored locally; Docker self-hosting can additionally persist config on the server filesystem.
 - **Monolithic page.jsx** — entire app state and logic in one file (~3000+ lines). No state management library.
 - **Dual responsive layouts** — `PcFundTable` and `MobileFundTable` switch at 640px breakpoint.
 - **shadcn/ui conventions** — new-york style, CSS variables enabled, Lucide icons, path aliases (`@/components`, `@/lib/utils`).

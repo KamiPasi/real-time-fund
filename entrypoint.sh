@@ -1,8 +1,8 @@
 #!/bin/sh
-# 在启动 Nginx 前，将静态资源中的占位符替换为运行时环境变量
+# 启动 Node 服务前，将静态资源中的占位符替换为运行时环境变量
 set -e
 
-HTML_ROOT="/usr/share/nginx/html"
+HTML_ROOT="/app/out"
 
 # 转义 sed 替换串中的特殊字符：\ & |
 escape_sed() {
@@ -16,11 +16,12 @@ replace_var() {
   find "$HTML_ROOT" -type f \( -name '*.js' -o -name '*.html' \) -exec sed -i "s|${placeholder}|${value}|g" {} \;
 }
 
-# URL 构建时使用合法占位，此处替换为运行时环境变量
-replace_var "https://runtime-replace.supabase.co" "${NEXT_PUBLIC_SUPABASE_URL}"
-replace_var "__NEXT_PUBLIC_SUPABASE_ANON_KEY__" "${NEXT_PUBLIC_SUPABASE_ANON_KEY}"
+# 构建阶段写入占位符，此处替换为运行时环境变量
+replace_var "__NEXT_PUBLIC_LOGIN_ACCOUNT__" "${NEXT_PUBLIC_LOGIN_ACCOUNT}"
+replace_var "__NEXT_PUBLIC_LOGIN_PASSWORD__" "${NEXT_PUBLIC_LOGIN_PASSWORD}"
+replace_var "__NEXT_PUBLIC_ENABLE_SERVER_FILE_STORAGE__" "${NEXT_PUBLIC_ENABLE_SERVER_FILE_STORAGE}"
 replace_var "__NEXT_PUBLIC_WEB3FORMS_ACCESS_KEY__" "${NEXT_PUBLIC_WEB3FORMS_ACCESS_KEY}"
 replace_var "__NEXT_PUBLIC_GA_ID__" "${NEXT_PUBLIC_GA_ID}"
 replace_var "__NEXT_PUBLIC_GITHUB_LATEST_RELEASE_URL__" "${NEXT_PUBLIC_GITHUB_LATEST_RELEASE_URL}"
 
-exec nginx -g "daemon off;"
+exec node /app/server.js

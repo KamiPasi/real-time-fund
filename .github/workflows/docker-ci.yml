@@ -14,11 +14,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-      - name: Create .env.local
+      - name: Create .env
         run: |
-          cat << 'EOF' > .env.local
-          NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          cat << 'EOF' > .env
+          NEXT_PUBLIC_LOGIN_ACCOUNT=${{ secrets.NEXT_PUBLIC_LOGIN_ACCOUNT }}
+          NEXT_PUBLIC_LOGIN_PASSWORD=${{ secrets.NEXT_PUBLIC_LOGIN_PASSWORD }}
+          NEXT_PUBLIC_ENABLE_SERVER_FILE_STORAGE=true
+          CONFIG_STORAGE_FILE=/app/data/config-store.json
           NEXT_PUBLIC_WEB3FORMS_ACCESS_KEY=${{ secrets.NEXT_PUBLIC_WEB3FORMS_ACCESS_KEY }}
           NEXT_PUBLIC_GA_ID=${{ secrets.NEXT_PUBLIC_GA_ID }}
           NEXT_PUBLIC_GITHUB_LATEST_RELEASE_URL=${{ secrets.NEXT_PUBLIC_GITHUB_LATEST_RELEASE_URL }}
@@ -29,7 +31,7 @@ jobs:
 
       - name: Run Dockerfile container
         run: |
-          docker run -d --name fund -p 3000:3000 real-time-fund
+          docker run -d --name fund -p 3000:3000 --env-file .env real-time-fund
           echo "Waiting 10 seconds for the container to start..."
           sleep 10
 
@@ -49,11 +51,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-      - name: Create .env.local
+      - name: Create .env
         run: |
-          cat << 'EOF' > .env.local
-          NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          cat << 'EOF' > .env
+          NEXT_PUBLIC_LOGIN_ACCOUNT=${{ secrets.NEXT_PUBLIC_LOGIN_ACCOUNT }}
+          NEXT_PUBLIC_LOGIN_PASSWORD=${{ secrets.NEXT_PUBLIC_LOGIN_PASSWORD }}
+          NEXT_PUBLIC_ENABLE_SERVER_FILE_STORAGE=true
+          CONFIG_STORAGE_FILE=/app/data/config-store.json
           NEXT_PUBLIC_WEB3FORMS_ACCESS_KEY=${{ secrets.NEXT_PUBLIC_WEB3FORMS_ACCESS_KEY }}
           NEXT_PUBLIC_GA_ID=${{ secrets.NEXT_PUBLIC_GA_ID }}
           NEXT_PUBLIC_GITHUB_LATEST_RELEASE_URL=${{ secrets.NEXT_PUBLIC_GITHUB_LATEST_RELEASE_URL }}

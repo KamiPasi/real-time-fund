@@ -40,20 +40,20 @@ export default function CloudConfigModal({ onConfirm, onCancel, type = 'empty' }
 
   const confirmTitle =
     pendingAction === 'local'
-      ? '确认使用本地配置覆盖云端？'
-      : '确认使用云端配置覆盖本地？';
+      ? '确认使用本地配置覆盖服务器配置？'
+      : '确认使用服务器配置覆盖本地？';
 
   const confirmMessage =
     pendingAction === 'local'
-      ? '此操作会将当前本地配置同步到云端，覆盖云端原有配置，且可能无法恢复，请谨慎操作。'
-      : '此操作会使用云端配置覆盖当前本地配置，导致本地修改丢失，且可能无法恢复，请谨慎操作。';
+      ? '此操作会将当前本地配置同步到服务器，覆盖服务器原有配置，且可能无法恢复，请谨慎操作。'
+      : '此操作会使用服务器配置覆盖当前本地配置，导致本地修改丢失，且可能无法恢复，请谨慎操作。';
 
   return (
     <motion.div
       className="modal-overlay"
       role="dialog"
       aria-modal="true"
-      aria-label={isConflict ? "配置冲突提示" : "云端同步提示"}
+      aria-label={isConflict ? "配置冲突提示" : "服务器同步提示"}
       onClick={isConflict ? undefined : onCancel}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -70,7 +70,7 @@ export default function CloudConfigModal({ onConfirm, onCancel, type = 'empty' }
         <div className="title" style={{ marginBottom: 12, justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <CloudIcon width="20" height="20" />
-            <span>{isConflict ? '发现配置冲突' : '云端暂无配置'}</span>
+            <span>{isConflict ? '发现配置冲突' : '服务器暂无配置'}</span>
           </div>
           {!isConflict && (
             <button className="icon-button" onClick={onCancel} style={{ border: 'none', background: 'transparent' }}>
@@ -80,15 +80,15 @@ export default function CloudConfigModal({ onConfirm, onCancel, type = 'empty' }
         </div>
         <p className="muted" style={{ marginBottom: 20, fontSize: '14px', lineHeight: '1.6' }}>
           {isConflict
-            ? '检测到本地配置与云端不一致，请选择操作：'
-            : '是否将本地配置同步到云端？'}
+            ? '检测到本地配置与服务器配置不一致，请选择操作：'
+            : '是否将本地配置同步到服务器？'}
         </p>
         <div className="row" style={{ flexDirection: 'column', gap: 12 }}>
           <button className="button secondary" onClick={handlePrimaryClick}>
-            {isConflict ? '保留本地 (覆盖云端)' : '同步本地到云端'}
+            {isConflict ? '保留本地 (覆盖服务器)' : '同步本地到服务器'}
           </button>
           <button className="button" onClick={handleSecondaryClick}>
-            {isConflict ? '使用云端 (覆盖本地)' : '暂不同步'}
+            {isConflict ? '使用服务器配置 (覆盖本地)' : '暂不同步'}
           </button>
         </div>
       </motion.div>
