@@ -64,6 +64,7 @@ import SortSettingModal from "./components/SortSettingModal";
 import githubImg from "./assets/github.svg";
 import { localAuth, isPasswordAuthConfigured } from './lib/localAuth';
 import { fetchServerConfig, saveServerConfig, isServerFileStorageConfigured } from './lib/serverFileStorage';
+import { getPublicRuntimeEnv } from './lib/runtimeConfig';
 import { toast as sonnerToast } from 'sonner';
 import { recordValuation, getAllValuationSeries, clearFund } from './lib/valuationTimeseries';
 import { loadHolidaysForYears, isTradingDay as isDateTradingDay } from './lib/tradingCalendar';
@@ -342,7 +343,7 @@ export default function HomePage() {
   const [loginPassword, setLoginPassword] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState('');
-  const cloudSyncEnabled = Boolean(user?.id && isServerFileStorageConfigured);
+  const cloudSyncEnabled = Boolean(user?.id && isServerFileStorageConfigured());
   const userDisplayName = getUserDisplayName(user);
 
   const userAvatar = useMemo(() => {
@@ -490,7 +491,7 @@ export default function HomePage() {
 
   useEffect(() => {
     // 未配置 GitHub 最新版本接口地址时，不进行更新检查
-    if (!process.env.NEXT_PUBLIC_GITHUB_LATEST_RELEASE_URL) return;
+    if (!getPublicRuntimeEnv('NEXT_PUBLIC_GITHUB_LATEST_RELEASE_URL')) return;
 
     const checkUpdate = async () => {
       try {
@@ -1220,7 +1221,7 @@ export default function HomePage() {
 
   const handleOpenLogin = () => {
     setUserMenuOpen(false);
-    if (!isPasswordAuthConfigured) {
+    if (!isPasswordAuthConfigured()) {
       showToast('未配置登录账号或密码，无法登录', 'error');
       return;
     }
@@ -1681,7 +1682,7 @@ export default function HomePage() {
   }, []);
 
   const scheduleSync = useCallback(() => {
-    if (!isServerFileStorageConfigured) return;
+    if (!isServerFileStorageConfigured()) return;
     if (!userIdRef.current) return;
     if (skipSyncRef.current) return;
     if (syncDebounceRef.current) clearTimeout(syncDebounceRef.current);
@@ -1713,14 +1714,14 @@ export default function HomePage() {
         syncUserConfig(userIdRef.current, false, payload, false);
       }
     }, 1000 * 5); // 往服务器同步的防抖时间
-  }, [isServerFileStorageConfigured]);
+  }, []);
 
   const storageHelper = useMemo(() => {
     // 仅以下 key 参与服务器同步；fundValuationTimeseries 不同步到服务器
     const keys = new Set(['funds', 'favorites', 'groups', 'collapsedCodes', 'collapsedTrends', 'refreshMs', 'holdings', 'pendingTrades', 'transactions', 'dcaPlans', 'customSettings']);
     const triggerSync = (key, prevValue, nextValue) => {
       if (keys.has(key)) {
-        if (!isServerFileStorageConfigured) return;
+        if (!isServerFileStorageConfigured()) return;
         // 标记为脏数据
         dirtyKeysRef.current.add(key);
 
@@ -1763,7 +1764,7 @@ export default function HomePage() {
         scheduleSync();
       }
     };
-  }, [getFundCodesSignature, isServerFileStorageConfigured, scheduleSync]);
+  }, [getFundCodesSignature, scheduleSync]);
 
   useEffect(() => {
     // 仅以下 key 的变更会触发服务器同步；fundValuationTimeseries 不在其中
@@ -1773,7 +1774,7 @@ export default function HomePage() {
       if (e.key === 'localUpdatedAt') {
         setLastSyncTime(e.newValue);
       }
-      if (!isServerFileStorageConfigured) return;
+      if (!isServerFileStorageConfigured()) return;
       if (!keys.has(e.key)) return;
       if (e.key === 'funds') {
         const prevSig = getFundCodesSignature(e.oldValue);
@@ -1787,7 +1788,7 @@ export default function HomePage() {
       window.removeEventListener('storage', onStorage);
       if (syncDebounceRef.current) clearTimeout(syncDebounceRef.current);
     };
-  }, [getFundCodesSignature, isServerFileStorageConfigured, scheduleSync]);
+  }, [getFundCodesSignature, scheduleSync]);
 
   const triggerCustomSettingsSync = useCallback(() => {
     queueMicrotask(() => {
@@ -2138,7 +2139,7 @@ export default function HomePage() {
       try {
         // 已登录用户：不在此处调用 refreshAll，等 fetchCloudConfig 完成后由 applyCloudConfig 统一刷新
         let shouldRefreshFromLocal = true;
-        if (isServerFileStorageConfigured) {
+        if (isServerFileStorageConfigured()) {
           const { data, error } = await localAuth.getSession();
           if (!cancelled && !error && data?.session?.user) {
             shouldRefreshFromLocal = false;
@@ -2225,7 +2226,7 @@ export default function HomePage() {
     };
     init();
     return () => { cancelled = true; };
-  }, [isServerFileStorageConfigured]);
+  }, []);
 
   // 记录用户当前选择的分组（仅本地存储，不同步服务器）
   useEffect(() => {
@@ -2273,7 +2274,7 @@ export default function HomePage() {
       if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
         resetLoginForm();
       }
-      if (isServerFileStorageConfigured) {
+      if (isServerFileStorageConfigured()) {
         // 仅在明确的登录动作（SIGNED_IN）时检查冲突；INITIAL_SESSION（刷新页面等）不检查，直接以服务器配置为准
         fetchCloudConfig(session.user.id, isExplicitLogin);
       }
@@ -2301,7 +2302,7 @@ export default function HomePage() {
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
-    if (!isPasswordAuthConfigured) {
+    if (!isPasswordAuthConfigured()) {
       showToast('未配置登录账号或密码，无法登录', 'error');
       return;
     }
@@ -3157,7 +3158,7 @@ export default function HomePage() {
   };
 
   const fetchCloudConfig = async (userId, checkConflict = false) => {
-    if (!isServerFileStorageConfigured || !userId) return;
+    if (!isServerFileStorageConfigured() || !userId) return;
     try {
       const remoteConfig = await fetchServerConfig(userId);
       const localPayload = collectLocalPayload();
@@ -3201,7 +3202,7 @@ export default function HomePage() {
   };
 
   const syncUserConfig = async (userId, showTip = true, payload = null, isPartial = false) => {
-    if (!isServerFileStorageConfigured) {
+    if (!isServerFileStorageConfigured()) {
       if (showTip) {
         showToast('未启用服务器文件存储，无法同步配置', 'error');
       }

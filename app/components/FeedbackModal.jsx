@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { CloseIcon, SettingsIcon } from './Icons';
 import { submitFeedback } from '../api/fund';
+import { getPublicRuntimeEnv } from '../lib/runtimeConfig';
 
 export default function FeedbackModal({ onClose, user, onOpenWeChat }) {
   const [submitting, setSubmitting] = useState(false);
@@ -22,7 +23,7 @@ export default function FeedbackModal({ onClose, user, onOpenWeChat }) {
     }
 
     // Web3Forms Access Key
-    formData.append("access_key", process.env.NEXT_PUBLIC_WEB3FORMS_ACCESS_KEY || '');
+    formData.append("access_key", getPublicRuntimeEnv('NEXT_PUBLIC_WEB3FORMS_ACCESS_KEY'));
     formData.append("subject", "基估宝 - 用户反馈");
 
     try {

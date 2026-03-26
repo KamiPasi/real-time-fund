@@ -1,17 +1,21 @@
 'use client';
 
-const configuredAccount = (process.env.NEXT_PUBLIC_LOGIN_ACCOUNT || '').trim();
-const configuredPassword = process.env.NEXT_PUBLIC_LOGIN_PASSWORD || '';
-const serverFileStorageEnabled = process.env.NEXT_PUBLIC_ENABLE_SERVER_FILE_STORAGE === 'true';
+import { getPublicRuntimeEnv } from './runtimeConfig';
 
-export const isServerFileStorageConfigured = Boolean(
-  serverFileStorageEnabled &&
-  configuredAccount &&
-  configuredPassword
+const getConfiguredAccount = () => (getPublicRuntimeEnv('NEXT_PUBLIC_LOGIN_ACCOUNT') || '').trim();
+const getConfiguredPassword = () => getPublicRuntimeEnv('NEXT_PUBLIC_LOGIN_PASSWORD') || '';
+const isServerFileStorageEnabled = () => getPublicRuntimeEnv('NEXT_PUBLIC_ENABLE_SERVER_FILE_STORAGE') === 'true';
+
+export const isServerFileStorageConfigured = () => Boolean(
+  isServerFileStorageEnabled() &&
+  getConfiguredAccount() &&
+  getConfiguredPassword()
 );
 
 const getAuthHeader = () => {
   if (typeof window === 'undefined') return '';
+  const configuredAccount = getConfiguredAccount();
+  const configuredPassword = getConfiguredPassword();
   const encoded = new TextEncoder().encode(`${configuredAccount}:${configuredPassword}`);
   let binary = '';
   encoded.forEach((byte) => {
@@ -40,7 +44,7 @@ const parseResponse = async (response) => {
 };
 
 export const fetchServerConfig = async (userId) => {
-  if (!isServerFileStorageConfigured || !userId) {
+  if (!isServerFileStorageConfigured() || !userId) {
     return { exists: false, data: null, updatedAt: null };
   }
 
@@ -64,7 +68,7 @@ export const fetchServerConfig = async (userId) => {
 };
 
 export const saveServerConfig = async (userId, data) => {
-  if (!isServerFileStorageConfigured || !userId) {
+  if (!isServerFileStorageConfigured() || !userId) {
     throw new Error('未启用服务器文件存储');
   }
 

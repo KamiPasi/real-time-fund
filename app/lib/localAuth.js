@@ -1,30 +1,36 @@
 'use client';
 
 import { v5 as uuidv5 } from 'uuid';
+import { getPublicRuntimeEnv } from './runtimeConfig';
 
 const AUTH_STORAGE_KEY = 'localAuthSession';
 const ACCOUNT_NAMESPACE = '0f2b6dd6-3b34-4dc8-9d4b-2d72a5e8a4bf';
 const CREDENTIAL_NAMESPACE = 'a6f7c6d9-1d1f-4e5a-9af6-0c0c7d2f8f12';
 
-const configuredAccount = (process.env.NEXT_PUBLIC_LOGIN_ACCOUNT || '').trim();
-const configuredPassword = process.env.NEXT_PUBLIC_LOGIN_PASSWORD || '';
+const getConfiguredAccount = () => (getPublicRuntimeEnv('NEXT_PUBLIC_LOGIN_ACCOUNT') || '').trim();
+const getConfiguredPassword = () => getPublicRuntimeEnv('NEXT_PUBLIC_LOGIN_PASSWORD') || '';
 
-export const isPasswordAuthConfigured = Boolean(configuredAccount && configuredPassword);
+export const isPasswordAuthConfigured = () => Boolean(getConfiguredAccount() && getConfiguredPassword());
 
 const subscribers = new Set();
 
 const looksLikeEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
 const getCredentialFingerprint = () => {
-  if (!isPasswordAuthConfigured) return '';
+  const configuredAccount = getConfiguredAccount();
+  const configuredPassword = getConfiguredPassword();
+  if (!configuredAccount || !configuredPassword) return '';
   return uuidv5(`${configuredAccount}\n${configuredPassword}`, CREDENTIAL_NAMESPACE);
 };
 
-const createUser = () => ({
-  id: uuidv5(configuredAccount.toLowerCase(), ACCOUNT_NAMESPACE),
-  account: configuredAccount,
-  email: looksLikeEmail(configuredAccount) ? configuredAccount : ''
-});
+const createUser = () => {
+  const configuredAccount = getConfiguredAccount();
+  return {
+    id: uuidv5(configuredAccount.toLowerCase(), ACCOUNT_NAMESPACE),
+    account: configuredAccount,
+    email: looksLikeEmail(configuredAccount) ? configuredAccount : ''
+  };
+};
 
 const createSession = () => ({
   user: createUser(),
@@ -46,7 +52,8 @@ const clearStoredSession = () => {
 };
 
 const readStoredSession = () => {
-  if (typeof window === 'undefined' || !isPasswordAuthConfigured) return null;
+  const configuredAccount = getConfiguredAccount();
+  if (typeof window === 'undefined' || !isPasswordAuthConfigured()) return null;
   try {
     const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
     if (!raw) return null;
@@ -107,7 +114,10 @@ export const localAuth = {
     };
   },
   async signInWithPassword({ account, password }) {
-    if (!isPasswordAuthConfigured) {
+    const configuredAccount = getConfiguredAccount();
+    const configuredPassword = getConfiguredPassword();
+
+    if (!configuredAccount || !configuredPassword) {
       return {
         data: null,
         error: { message: '未配置账号密码' }

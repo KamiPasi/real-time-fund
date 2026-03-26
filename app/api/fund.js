@@ -708,7 +708,7 @@ export const fetchMarketIndices = async () => {
 };
 
 export const fetchLatestRelease = async () => {
-  const url = process.env.NEXT_PUBLIC_GITHUB_LATEST_RELEASE_URL;
+  const url = getPublicRuntimeEnv('NEXT_PUBLIC_GITHUB_LATEST_RELEASE_URL');
   if (!url) return null;
 
   const res = await fetch(url);
@@ -988,3 +988,4 @@ export const parseFundTextWithLLM = async (text) => {
     return null;
   }
 };
+import { getPublicRuntimeEnv } from '../lib/runtimeConfig';

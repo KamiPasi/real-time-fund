@@ -28,6 +28,15 @@ const MIME_TYPES = {
   '.xml': 'application/xml; charset=utf-8'
 };
 
+const getPublicRuntimeConfig = () => ({
+  NEXT_PUBLIC_LOGIN_ACCOUNT: LOGIN_ACCOUNT,
+  NEXT_PUBLIC_LOGIN_PASSWORD: LOGIN_PASSWORD,
+  NEXT_PUBLIC_ENABLE_SERVER_FILE_STORAGE: process.env.NEXT_PUBLIC_ENABLE_SERVER_FILE_STORAGE || '',
+  NEXT_PUBLIC_WEB3FORMS_ACCESS_KEY: process.env.NEXT_PUBLIC_WEB3FORMS_ACCESS_KEY || '',
+  NEXT_PUBLIC_GA_ID: process.env.NEXT_PUBLIC_GA_ID || '',
+  NEXT_PUBLIC_GITHUB_LATEST_RELEASE_URL: process.env.NEXT_PUBLIC_GITHUB_LATEST_RELEASE_URL || ''
+});
+
 const createHttpError = (status, message) => {
   const error = new Error(message);
   error.status = status;
@@ -56,6 +65,17 @@ const sendText = (res, statusCode, body, headers = {}) => {
     ...headers
   });
   res.end(body);
+};
+
+const injectRuntimeConfig = (html) => {
+  const serializedConfig = JSON.stringify(getPublicRuntimeConfig()).replace(/</g, '\\u003c');
+  const script = `<script>self.__APP_RUNTIME_CONFIG__=${serializedConfig};self.process=self.process||{};self.process.env=Object.assign({}, self.process.env||{}, self.__APP_RUNTIME_CONFIG__);</script>`;
+
+  if (html.includes('</head>')) {
+    return html.replace('</head>', `${script}</head>`);
+  }
+
+  return `${script}${html}`;
 };
 
 const ensureStorageDirectory = () => {
@@ -218,6 +238,22 @@ const serveStatic = (req, res, url) => {
     res.writeHead(200, headers);
     res.end();
     return;
+  }
+
+  if (extension === '.html') {
+    try {
+      const html = fs.readFileSync(filePath, 'utf8');
+      const body = injectRuntimeConfig(html);
+      res.writeHead(200, {
+        ...headers,
+        'Content-Length': Buffer.byteLength(body)
+      });
+      res.end(body);
+      return;
+    } catch {
+      sendText(res, 500, 'Internal Server Error');
+      return;
+    }
   }
 
   const stream = fs.createReadStream(filePath);
